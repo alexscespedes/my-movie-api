@@ -1,13 +1,27 @@
 import datetime
-from fastapi import FastAPI, Path, Query
+from fastapi import Depends, FastAPI, Path, Query, Request
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse,JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
+from jwt_manager import create_token, validate_token
+from fastapi.security import HTTPBearer
 
 app = FastAPI()
 app.title = "My Application with FastAPI"
 app.version = "0.0.1"
+
+class JWTBearer(HTTPBearer):
+    async def __call__(self, request: Request):
+        auth = await super().__call__(request)
+        data = validate_token(auth.credentials)
+        if data['email'] != "admin@gmail.com":
+            raise HTTPException(status_code=403, detail="invalid credentials")
+        
+
+class User(BaseModel):
+    email:str
+    password:str
 
 class Movie(BaseModel):
             id: Optional[int] = None
@@ -58,7 +72,7 @@ def message():
 
 
 
-@app.get('/movies', tags=['movies'], response_model=List[Movie], status_code=200)
+@app.get('/movies', tags=['movies'], response_model=List[Movie], status_code=200, dependencies=[Depends(JWTBearer())])
 def get_movies() -> List[Movie] :
     return JSONResponse(content=movies)
 
@@ -80,6 +94,13 @@ def get_movies_by_category(category: str = Query(min_length=5, max_length=15)) -
 def create_movie(movie: Movie) -> dict:
     movies.append(movie)
     return JSONResponse(status_code=201, content={"message":"Successfully added"})
+
+
+@app.post('/login', tags=['auth'])
+def login(user: User):
+    if user.email == "admin@gmail.com" and user.password == "admin":
+        token: str = create_token(user.dict())
+        return JSONResponse(status_code=200, content=token) 
 
 @app.put('/movies/{id}', tags=['movies'], response_model=dict, status_code=200)
 def update_movie(id:int, movie: Movie) -> dict:
